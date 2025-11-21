@@ -1,5 +1,5 @@
 import os
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr
 from typing import List, Optional
@@ -106,6 +106,17 @@ class UpdateProfile(BaseModel):
     avatar: Optional[str] = None
 
 
+@app.get("/api/profile/{email}")
+def get_profile(email: str):
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+    user = db["user"].find_one({"email": email}, {"password_hash": 0})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    user["_id"] = str(user["_id"])  # jsonify
+    return user
+
+
 @app.put("/api/profile/{email}")
 def update_profile(email: str, payload: UpdateProfile):
     if db is None:
@@ -147,6 +158,25 @@ def list_courses(owner_email: str):
         return items
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/courses/{course_id}")
+def delete_course(course_id: str, owner_email: str = Query(...)):
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+    try:
+        obj_id = ObjectId(course_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid course id")
+
+    course = db["course"].find_one({"_id": obj_id})
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found")
+    if course.get("owner_email") != owner_email:
+        raise HTTPException(status_code=403, detail="Not allowed")
+
+    db["course"].delete_one({"_id": obj_id})
+    return {"message": "Deleted"}
 
 
 # Schedule entries
